@@ -310,7 +310,7 @@ fun ModalBottomSheetLayout2(
                         fullHeight.roundToInt()
                     } else {
                         // See comment below about the issue with using "isSheetContentAnimating" and how it is set
-                        // Maybe we could instead invert this and use "isSwiping"?
+                        // Maybe we could instead invert this and use "isSwiping" if that is something we have access to?
                         if (isSheetContentAnimating) {
                             fullHeight.toInt() - (sheetContentHeightState ?: 0)
                         } else {
