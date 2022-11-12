@@ -286,7 +286,7 @@ fun ModalBottomSheetLayout2(
     BoxWithConstraints(modifier) {
         val fullHeight = constraints.maxHeight.toFloat()
         val sheetHeightState = remember { mutableStateOf<Float?>(null) }
-        var sheetContentHeightState by remember { mutableStateOf(0) }
+        var sheetContentHeightState by remember { mutableStateOf<Int?>(null) }
         var isSheetContentAnimating by remember { mutableStateOf(false) }
 
         Box(Modifier.fillMaxSize()) {
@@ -310,8 +310,10 @@ fun ModalBottomSheetLayout2(
                         // if we don't know our anchors yet, render the sheet as hidden
                         fullHeight.roundToInt()
                     } else {
+                        // See comment below about the issue with using "isSheetContentAnimating" and how it is set
+                        // Maybe we could instead invert this and use "isSwiping"?
                         if (isSheetContentAnimating) {
-                            fullHeight.toInt() - sheetContentHeightState
+                            fullHeight.toInt() - (sheetContentHeightState ?: 0)
                         } else {
                             // if we do know our anchors, respect them
                             sheetState.offset.value.roundToInt()
@@ -358,7 +360,14 @@ fun ModalBottomSheetLayout2(
                 content = sheetContent,
                 modifier = Modifier
                     .onSizeChanged {
-                        isSheetContentAnimating = true
+                        // I don't think setting "isSheetContentAnimating = true" makes sense to do here. It would be better to only set this when
+                        // we know we're actually animating, ideally if "animateContentSize" had a "startListener" in addition to "finishedListener"
+                        // If we set this the first time the size changes it will not be set back to false since "animateContentSize.finishedListener"
+                        // won't be called, which breaks the "offset" modifier above making the bottom sheet content not swipeable until the content
+                        // size animated and triggering "animateContentSize"
+                        if (sheetContentHeightState != null) {
+                            isSheetContentAnimating = true
+                        }
                         sheetContentHeightState = it.height
                     }
                     .animateContentSize { _, _ ->
