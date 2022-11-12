@@ -1,10 +1,8 @@
 package com.github.hakonschia.bottom_sheet_dynamic_height.bottomsheet
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.*
 import androidx.compose.material.*
-import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.TweenSpec
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -22,23 +20,24 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.*
+import androidx.compose.ui.platform.debugInspectorInfo
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -356,9 +355,21 @@ fun ModalBottomSheetLayout2(
             color = sheetBackgroundColor,
             contentColor = sheetContentColor
         ) {
-            Column(
-                content = sheetContent,
-                modifier = Modifier
+            val customAnimateModifier = if (true) {
+                Modifier
+                    .onSizeChanged {
+                        sheetContentHeightState = it.height
+                    }
+                    .animateContentSize(
+                        startListener = {
+                            isSheetContentAnimating = true
+                        },
+                        finishedListener = { _, _ ->
+                            isSheetContentAnimating = false
+                        }
+                    )
+            } else {
+                Modifier
                     .onSizeChanged {
                         // I don't think setting "isSheetContentAnimating = true" makes sense to do here. It would be better to only set this when
                         // we know we're actually animating, ideally if "animateContentSize" had a "startListener" in addition to "finishedListener"
@@ -373,9 +384,116 @@ fun ModalBottomSheetLayout2(
                     .animateContentSize { _, _ ->
                         isSheetContentAnimating = false
                     }
+            }
+
+            Column(
+                content = sheetContent,
+                modifier = customAnimateModifier
             )
         }
     }
+}
+
+fun Modifier.animateContentSize(
+    animationSpec: FiniteAnimationSpec<IntSize> = spring(),
+    startListener: () -> Unit,
+    finishedListener: ((initialValue: IntSize, targetValue: IntSize) -> Unit)? = null
+): Modifier = composed(
+    inspectorInfo = debugInspectorInfo {
+        name = "animateContentSize"
+        properties["animationSpec"] = animationSpec
+        properties["finishedListener"] = finishedListener
+    }
+) {
+    // TODO: Listener could be a fun interface after 1.4
+    val scope = rememberCoroutineScope()
+    val animModifier = remember(scope) {
+        SizeAnimationModifier(animationSpec, scope)
+    }
+    animModifier.listener = finishedListener
+    animModifier.startListener = startListener
+    this
+        .clipToBounds()
+        .then(animModifier)
+}
+
+/**
+ * This class creates a [LayoutModifier] that measures children, and responds to children's size
+ * change by animating to that size. The size reported to parents will be the animated size.
+ */
+private class SizeAnimationModifier(
+    val animSpec: AnimationSpec<IntSize>,
+    val scope: CoroutineScope,
+) : LayoutModifierWithPassThroughIntrinsics() {
+    var startListener: (() -> Unit)? = null
+    var listener: ((startSize: IntSize, endSize: IntSize) -> Unit)? = null
+
+    data class AnimData(
+        val anim: Animatable<IntSize, AnimationVector2D>,
+        var startSize: IntSize
+    )
+
+    var animData: AnimData? by mutableStateOf(null)
+
+    override fun MeasureScope.measure(
+        measurable: Measurable,
+        constraints: Constraints
+    ): MeasureResult {
+
+        val placeable = measurable.measure(constraints)
+
+        val measuredSize = IntSize(placeable.width, placeable.height)
+
+        val (width, height) = animateTo(measuredSize)
+        return layout(width, height) {
+            placeable.placeRelative(0, 0)
+        }
+    }
+
+    fun animateTo(targetSize: IntSize): IntSize {
+        val data = animData?.apply {
+            if (targetSize != anim.targetValue) {
+                startSize = anim.value
+                scope.launch {
+                    startListener?.invoke()
+                    val result = anim.animateTo(targetSize, animSpec)
+                    if (result.endReason == AnimationEndReason.Finished) {
+                        listener?.invoke(startSize, result.endState.value)
+                    }
+                }
+            }
+        } ?: AnimData(
+            Animatable(
+                targetSize, IntSize.VectorConverter, IntSize(1, 1)
+            ),
+            targetSize
+        )
+
+        animData = data
+        return data.anim.value
+    }
+}
+
+internal abstract class LayoutModifierWithPassThroughIntrinsics : LayoutModifier {
+    final override fun IntrinsicMeasureScope.minIntrinsicWidth(
+        measurable: IntrinsicMeasurable,
+        height: Int
+    ) = measurable.minIntrinsicWidth(height)
+
+    final override fun IntrinsicMeasureScope.minIntrinsicHeight(
+        measurable: IntrinsicMeasurable,
+        width: Int
+    ) = measurable.minIntrinsicHeight(width)
+
+    final override fun IntrinsicMeasureScope.maxIntrinsicWidth(
+        measurable: IntrinsicMeasurable,
+        height: Int
+    ) = measurable.maxIntrinsicWidth(height)
+
+    final override fun IntrinsicMeasureScope.maxIntrinsicHeight(
+        measurable: IntrinsicMeasurable,
+        width: Int
+    ) = measurable.maxIntrinsicHeight(width)
 }
 
 @Suppress("ModifierInspectorInfo")
