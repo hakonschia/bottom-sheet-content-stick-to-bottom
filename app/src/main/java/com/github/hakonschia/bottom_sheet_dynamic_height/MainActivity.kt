@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
                 var stickToBottom by remember { mutableStateOf(false) }
                 Column(modifier = Modifier.fillMaxSize()) {
                     Switch(checked = stickToBottom, onCheckedChange = { stickToBottom = !stickToBottom })
+                    Text(text = "Showing " + if (stickToBottom) "stickying to bottom bottom sheet" else "default bottom sheet")
 
                     if (stickToBottom) {
                         StickToBottomBottomSheet()
@@ -56,7 +57,7 @@ private fun DefaultBottomSheet() {
                     }
                 }
             ) {
-                Text(text = "Show default bottom sheet")
+                Text(text = "Show")
             }
         }
     }
@@ -83,7 +84,7 @@ private fun StickToBottomBottomSheet() {
                     }
                 }
             ) {
-                Text(text = "Show stick to bottom bottom sheet")
+                Text(text = "Show")
             }
         }
     }
